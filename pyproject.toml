@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "passcheck"
+version = "1.0.0"
+description = "Password strength checker with an optional k-anonymity Have I Been Pwned lookup"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+passcheck = "passcheck.cli:main"
+
+[tool.setuptools]
+packages = ["passcheck"]
+
+[tool.setuptools.package-data]
+passcheck = ["data/*.txt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
