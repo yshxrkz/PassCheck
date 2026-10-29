@@ -30,7 +30,7 @@ class HashingTests(unittest.TestCase):
         self.assertEqual(hibp.split_hash(PASSWORD), (PREFIX, SUFFIX))
 
     def test_unicode_is_utf8_encoded(self):
-        expected = hashlib.sha1("pässwörd".encode("utf-8")).hexdigest().upper()
+        expected = hashlib.sha1("pässwörd".encode()).hexdigest().upper()
         self.assertEqual(hibp.sha1_hex("pässwörd"), expected)
 
 
@@ -114,9 +114,9 @@ class KAnonymityTests(unittest.TestCase):
     def test_network_error_becomes_hibp_error(self):
         import urllib.error
 
-        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline")):
-            with self.assertRaises(hibp.HIBPError):
-                hibp.pwned_count(PASSWORD)
+        offline = mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline"))
+        with offline, self.assertRaises(hibp.HIBPError):
+            hibp.pwned_count(PASSWORD)
 
 
 if __name__ == "__main__":

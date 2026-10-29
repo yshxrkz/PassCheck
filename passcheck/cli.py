@@ -6,7 +6,8 @@ import argparse
 import getpass
 import json
 import sys
-from typing import Sequence, TextIO
+from collections.abc import Sequence
+from typing import TextIO
 
 from . import __version__
 from .hibp import Fetcher, HIBPError, fetch_range, pwned_count

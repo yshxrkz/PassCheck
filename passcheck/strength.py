@@ -71,9 +71,7 @@ class StrengthReport:
 @lru_cache(maxsize=1)
 def load_common_passwords() -> frozenset[str]:
     text = resources.files("passcheck").joinpath("data/common_passwords.txt").read_text("utf-8")
-    return frozenset(
-        line.strip().lower() for line in text.splitlines() if line.strip() and not line.startswith("#")
-    )
+    return frozenset(line.strip().lower() for line in text.splitlines() if line.strip() and not line.startswith("#"))
 
 
 def character_classes(password: str) -> list[str]:
@@ -148,7 +146,7 @@ def _longest_prefix_in(text: str, line: str, min_len: int) -> int:
 def find_repeats(password: str) -> list[tuple[int, int]]:
     """Return spans of repeated characters ("aaa") or repeated chunks ("abcabc")."""
     spans = []
-    for match in re.finditer(r"(.)\1{%d,}" % (MIN_REPEAT - 1), password):
+    for match in re.finditer(rf"(.)\1{{{MIN_REPEAT - 1},}}", password):
         spans.append(match.span())
     for match in re.finditer(r"(.{2,}?)\1+", password):
         if len(set(match.group(1))) > 1:
@@ -242,7 +240,7 @@ def analyze(password: str) -> StrengthReport:
         score = 0
     elif common == "common-variant":
         score = min(score, 15)
-    score = int(round(max(0, min(100, score))))
+    score = round(max(0, min(100, score)))
 
     # Advice, most important first.
     if common:
@@ -257,9 +255,7 @@ def analyze(password: str) -> StrengthReport:
     if missing and length < GREAT_LENGTH:
         advice.append("Mix in more character types: " + ", ".join(missing) + ".")
     if score < 60:
-        advice.append(
-            "Consider a passphrase of 4+ random, unrelated words, or let a password manager generate one."
-        )
+        advice.append("Consider a passphrase of 4+ random, unrelated words, or let a password manager generate one.")
     if not advice:
         advice.append("Looks good. Use it for one account only and store it in a password manager.")
 

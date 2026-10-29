@@ -12,7 +12,8 @@ license = { text = "MIT" }
 dependencies = []
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest>=7", "pytest-cov>=4"]
+dev = ["pytest>=7", "pytest-cov>=4", "ruff>=0.5", "mypy>=1.10"]
 
 [project.scripts]
 passcheck = "passcheck.cli:main"
@@ -25,3 +26,27 @@ passcheck = ["data/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["passcheck"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = ["pragma: no cover", "if __name__ == .__main__.:"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, isort, bugbear, pyupgrade, simplify, bandit (security), ruff-specific
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use plain asserts and deliberately hard-code sample passwords and SHA-1 hashes.
+"tests/**" = ["S101", "S105", "S106", "S324"]
+
+[tool.mypy]
+strict = true
+files = ["passcheck"]

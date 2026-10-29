@@ -49,7 +49,8 @@ def fetch_range(prefix: str) -> str:
     )
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            return response.read().decode("utf-8")
+            body: bytes = response.read()
+            return body.decode("utf-8")
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise HIBPError(f"could not reach the Pwned Passwords API: {exc}") from exc
 
