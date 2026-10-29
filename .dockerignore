@@ -1,0 +1,6 @@
+# Only pyproject.toml, README.md and passcheck/ are needed to build the image.
+*
+!pyproject.toml
+!README.md
+!passcheck/
+**/__pycache__
