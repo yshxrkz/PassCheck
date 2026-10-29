@@ -10,6 +10,26 @@ FULL_HASH = "5BAA61E4C9B93F3F0682250B6CF8331B7EE68FD8"
 PREFIX, SUFFIX = FULL_HASH[:5], FULL_HASH[5:]
 
 
+class FakeResponse:
+    """Minimal stand-in for the object ``urllib.request.urlopen`` returns."""
+
+    def __init__(self, body, url="https://api.pwnedpasswords.com/range/00000"):
+        self.body = body
+        self.url = url
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def geturl(self):
+        return self.url
+
+    def read(self, amount=-1):
+        return self.body if amount < 0 else self.body[:amount]
+
+
 class RecordingFetcher:
     """Stand-in for the network call that remembers exactly what it was given."""
 
@@ -39,11 +59,22 @@ class ParseRangeTests(unittest.TestCase):
         body = "0018A45C4D1DEF81644B54AB7F969B88D65:10\r\n00D4F6E8FA6EECAD2A3AA415EEC418D38EC:0\r\n\r\n"
         self.assertEqual(hibp.parse_range(body), {"0018A45C4D1DEF81644B54AB7F969B88D65": 10})
 
-    def test_malformed_line_raises(self):
-        with self.assertRaises(hibp.HIBPError):
-            hibp.parse_range("garbage")
-        with self.assertRaises(hibp.HIBPError):
-            hibp.parse_range("ABC:notanumber")
+    def test_malformed_lines_raise(self):
+        for body in (
+            "garbage",
+            f"{SUFFIX}:notanumber",
+            f"{SUFFIX}:-1",
+            "ABC:3",  # suffix too short
+            f"{SUFFIX}X:3",  # suffix too long
+            "Z" * 35 + ":3",  # not hex
+        ):
+            with self.subTest(body=body), self.assertRaises(hibp.HIBPError):
+                hibp.parse_range(body)
+
+    def test_error_message_is_truncated(self):
+        with self.assertRaises(hibp.HIBPError) as ctx:
+            hibp.parse_range("x" * 10_000)
+        self.assertLess(len(str(ctx.exception)), 200)
 
 
 class PwnedCountTests(unittest.TestCase):
@@ -80,19 +111,9 @@ class KAnonymityTests(unittest.TestCase):
         prefix, suffix = full_hash[:5], full_hash[5:]
         captured = {}
 
-        class FakeResponse:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *exc):
-                return False
-
-            def read(self):
-                return f"{suffix}:1\n".encode()
-
         def fake_urlopen(request, timeout):
             captured["request"] = request
-            return FakeResponse()
+            return FakeResponse(f"{suffix}:1\n".encode())
 
         with mock.patch("urllib.request.urlopen", fake_urlopen):
             self.assertEqual(hibp.pwned_count(secret), 1)
@@ -117,6 +138,58 @@ class KAnonymityTests(unittest.TestCase):
         offline = mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("offline"))
         with offline, self.assertRaises(hibp.HIBPError):
             hibp.pwned_count(PASSWORD)
+
+
+def urlopen_returning(response=None, error=None):
+    def fake_urlopen(request, timeout):
+        if error is not None:
+            raise error
+        return response
+
+    return mock.patch("urllib.request.urlopen", fake_urlopen)
+
+
+class FetchRangeErrorTests(unittest.TestCase):
+    """Every failure mode surfaces as HIBPError, never as a traceback or a wrong answer."""
+
+    def assert_hibp_error(self, patcher, message_part):
+        with patcher, self.assertRaises(hibp.HIBPError) as ctx:
+            hibp.fetch_range(PREFIX)
+        self.assertIn(message_part, str(ctx.exception))
+
+    def test_http_error_status(self):
+        import urllib.error
+
+        error = urllib.error.HTTPError("https://x", 429, "Too Many Requests", {}, None)
+        self.assert_hibp_error(urlopen_returning(error=error), "HTTP 429")
+
+    def test_timeout(self):
+        self.assert_hibp_error(urlopen_returning(error=TimeoutError("timed out")), "could not reach")
+
+    def test_truncated_response(self):
+        import http.client
+
+        error = http.client.IncompleteRead(b"partial")
+        self.assert_hibp_error(urlopen_returning(error=error), "could not reach")
+
+    def test_oversized_response(self):
+        body = b"A" * (hibp.MAX_RESPONSE_BYTES + 10)
+        self.assert_hibp_error(urlopen_returning(FakeResponse(body)), "unexpectedly large")
+
+    def test_non_utf8_response(self):
+        self.assert_hibp_error(urlopen_returning(FakeResponse(b"\xff\xfe")), "UTF-8")
+
+    def test_redirect_to_plain_http_is_refused(self):
+        response = FakeResponse(b"", url="http://evil.example/range/5BAA6")
+        self.assert_hibp_error(urlopen_returning(response), "non-HTTPS")
+
+    def test_non_https_api_url_is_refused(self):
+        with mock.patch.object(hibp, "API_URL", "file:///etc/passwd?{prefix}"), self.assertRaises(hibp.HIBPError):
+            hibp.fetch_range(PREFIX)
+
+    def test_success_returns_text(self):
+        with urlopen_returning(FakeResponse(f"{SUFFIX}:3\r\n".encode())):
+            self.assertEqual(hibp.fetch_range(PREFIX), f"{SUFFIX}:3\r\n")
 
 
 if __name__ == "__main__":
