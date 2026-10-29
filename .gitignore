@@ -5,3 +5,9 @@ build/
 dist/
 .pytest_cache/
 .venv/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
