@@ -115,7 +115,7 @@ def read_password(use_stdin: bool, stdin: TextIO) -> str:
         try:
             password = getpass.getpass("Password: ")
         except EOFError:
-            password = ""
+            raise UsageError("no password given") from None
     if not password:
         raise UsageError("no password given")
     if len(password) > MAX_PASSWORD_LENGTH:
