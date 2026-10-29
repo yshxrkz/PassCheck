@@ -74,11 +74,14 @@ Span = tuple[int, int]
 class Finding:
     """A weakness detected in the password.
 
-    ``kind`` is a stable machine-readable identifier; ``message`` is for humans.
+    ``kind`` is a stable machine-readable identifier and ``message`` is for humans. The
+    message never contains any part of the password, so it is safe to log. The matched
+    substrings are kept separately in ``fragments``; callers decide whether to show them.
     """
 
     kind: FindingKind
     message: str
+    fragments: tuple[str, ...] = ()
 
 
 @dataclass
@@ -226,9 +229,9 @@ def _label_for(score: int) -> str:
     return LABELS[-1][1]
 
 
-def _fragments(password: str, spans: list[Span]) -> str:
-    """Quote the substrings covered by ``spans`` in order of appearance, de-duplicated."""
-    return ", ".join(dict.fromkeys(repr(password[start:end]) for start, end in sorted(spans)))
+def _fragments(password: str, spans: list[Span]) -> tuple[str, ...]:
+    """Return the substrings covered by ``spans`` in order of appearance, de-duplicated."""
+    return tuple(dict.fromkeys(password[start:end] for start, end in sorted(spans)))
 
 
 @dataclass
@@ -254,7 +257,9 @@ def _detect(password: str, classes: list[str]) -> _Detection:
     )
     for kind, description, spans in pattern_checks:
         if spans:
-            findings.append(Finding(kind, f"{description}: {_fragments(password, spans)}"))
+            span_chars = len({k for start, end in spans for k in range(start, end)})
+            message = f"{description} ({span_chars} characters)"
+            findings.append(Finding(kind, message, _fragments(password, spans)))
             for start, end in spans:
                 covered[start:end] = [True] * (end - start)
 

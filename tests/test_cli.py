@@ -62,6 +62,32 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, cli.EXIT_OK)
 
 
+class RedactionTests(unittest.TestCase):
+    """Output must not leak pieces of the password unless --reveal is given."""
+
+    PASSWORD = "Zebra789Quasar!qwerty"
+
+    def test_text_output_hides_fragments(self):
+        _, out, err = run([], self.PASSWORD)
+        self.assertIn("predictable sequence (3 characters)", out)
+        for fragment in ("789", "qwerty", "Zebra", "Quasar"):
+            self.assertNotIn(fragment, out + err)
+
+    def test_json_output_hides_fragments(self):
+        _, out, _ = run(["--json"], self.PASSWORD)
+        self.assertNotIn("789", out)
+        self.assertNotIn("qwerty", out)
+        self.assertNotIn("fragments", json.loads(out)["findings"][0])
+
+    def test_reveal_shows_fragments(self):
+        _, out, _ = run(["--reveal"], self.PASSWORD)
+        self.assertIn("'789'", out)
+        self.assertIn("'qwerty'", out)
+        _, out, _ = run(["--json", "--reveal"], self.PASSWORD)
+        fragments = {frag for f in json.loads(out)["findings"] for frag in f["fragments"]}
+        self.assertEqual(fragments, {"789", "qwerty"})
+
+
 class CliPwnedTests(unittest.TestCase):
     def test_breached_strong_password_fails(self):
         prefix, suffix = split_hash(STRONG)

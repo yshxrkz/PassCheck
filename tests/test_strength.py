@@ -89,6 +89,19 @@ class ScoringTests(unittest.TestCase):
         walky = analyze("Gk7$qwerty9!").score
         self.assertLess(walky, plain)
 
+    def test_messages_never_contain_the_password(self):
+        password = "abcqwerty1111"
+        report = analyze(password)
+        self.assertLessEqual({"sequence", "keyboard", "repeat"}, {f.kind for f in report.findings})
+        for finding in report.findings:
+            for fragment in ("abc", "qwerty", "1111"):
+                self.assertNotIn(fragment, finding.message)
+
+    def test_fragments_are_kept_separately(self):
+        report = analyze("Xy7$abcQ9!zz")
+        sequence = next(f for f in report.findings if f.kind == "sequence")
+        self.assertEqual(sequence.fragments, ("abc",))
+
     def test_year_is_flagged(self):
         self.assertIn("year", kinds("Rocket1987xx"))
 

@@ -11,7 +11,7 @@ from typing import TextIO
 
 from . import __version__
 from .hibp import Fetcher, HIBPError, fetch_range, pwned_count
-from .strength import analyze
+from .strength import Finding, analyze
 
 EXIT_OK = 0
 EXIT_WEAK = 1
@@ -49,6 +49,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"exit with status 1 if the score is below N (default: {DEFAULT_MIN_SCORE})",
     )
     parser.add_argument("--json", action="store_true", help="print the result as JSON")
+    parser.add_argument(
+        "--reveal",
+        action="store_true",
+        help=(
+            "show which parts of the password matched a pattern (e.g. '123'). Off by default "
+            "so output can be logged without leaking pieces of the password"
+        ),
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
 
@@ -58,6 +66,21 @@ def read_password(use_stdin: bool, stdin: TextIO) -> str:
         line = stdin.readline()
         return line[:-1] if line.endswith("\n") else line
     return getpass.getpass("Password: ")
+
+
+def _finding_text(finding: Finding, reveal: bool) -> str:
+    """Render a finding for the terminal, quoting the matched fragments only if asked to."""
+    if reveal and finding.fragments:
+        return f"{finding.message}: " + ", ".join(repr(f) for f in finding.fragments)
+    return finding.message
+
+
+def _finding_json(finding: Finding, reveal: bool) -> dict[str, object]:
+    """Render a finding for --json output; ``fragments`` is present only with --reveal."""
+    data: dict[str, object] = {"kind": finding.kind, "message": finding.message}
+    if reveal:
+        data["fragments"] = list(finding.fragments)
+    return data
 
 
 def _bar(score: int, width: int = 20) -> str:
@@ -107,7 +130,7 @@ def main(
             "label": report.label,
             "length": report.length,
             "character_classes": report.char_classes,
-            "findings": [{"kind": f.kind, "message": f.message} for f in report.findings],
+            "findings": [_finding_json(f, args.reveal) for f in report.findings],
             "advice": report.advice,
             "pwned": None if breach_count is None else {"breached": breach_count > 0, "count": breach_count},
             "pwned_error": breach_error,
@@ -121,7 +144,7 @@ def main(
         if report.findings:
             print("\nIssues found:", file=stdout)
             for finding in report.findings:
-                print(f"  - {finding.message}", file=stdout)
+                print(f"  - {_finding_text(finding, args.reveal)}", file=stdout)
         if args.pwned:
             print("\nBreach check (Have I Been Pwned):", file=stdout)
             if breach_error:
