@@ -37,7 +37,7 @@ class CliTests(unittest.TestCase):
         self.assertNotIn(STRONG, out + err)
 
     def test_min_score(self):
-        code, _, _ = run(["--min-score", "101"], STRONG)
+        code, _, _ = run(["--min-score", "100"], STRONG)  # STRONG scores 84
         self.assertEqual(code, cli.EXIT_WEAK)
         code, _, _ = run(["--min-score", "0"], "password")
         self.assertEqual(code, cli.EXIT_OK)
@@ -53,13 +53,74 @@ class CliTests(unittest.TestCase):
     def test_empty_password_is_an_error(self):
         code, _, err = run([], "")
         self.assertEqual(code, cli.EXIT_ERROR)
-        self.assertIn("No password", err)
+        self.assertIn("no password given", err)
 
     def test_prompts_with_getpass_by_default(self):
         with mock.patch("getpass.getpass", return_value=STRONG) as prompt:
             code = cli.main([], stdout=io.StringIO(), stderr=io.StringIO())
         prompt.assert_called_once()
         self.assertEqual(code, cli.EXIT_OK)
+
+
+class CliErrorHandlingTests(unittest.TestCase):
+    def test_min_score_must_be_in_range(self):
+        for bad in ("-1", "101", "abc"):
+            with self.subTest(value=bad), mock.patch("sys.stderr", io.StringIO()) as err:
+                with self.assertRaises(SystemExit) as ctx:
+                    cli.main(["--stdin", "--min-score", bad], stdin=io.StringIO("x\n"))
+                self.assertEqual(ctx.exception.code, 2)
+                self.assertIn("--min-score", err.getvalue())
+
+    def test_overlong_password_is_rejected(self):
+        code, out, err = run([], "a" * (cli.MAX_PASSWORD_LENGTH + 1))
+        self.assertEqual(code, cli.EXIT_ERROR)
+        self.assertIn("longer than", err)
+        self.assertEqual(out, "")
+
+    def test_huge_stdin_is_not_read_into_memory(self):
+        stdin = io.StringIO("a" * 10_000_000)
+        code = cli.main(["--stdin"], stdin=stdin, stdout=io.StringIO(), stderr=io.StringIO())
+        self.assertEqual(code, cli.EXIT_ERROR)
+        self.assertLessEqual(stdin.tell(), cli.MAX_PASSWORD_LENGTH + 2)
+
+    def test_password_at_max_length_is_accepted(self):
+        code, _, err = run(["--min-score", "0"], "Zq8!" * (cli.MAX_PASSWORD_LENGTH // 4))
+        self.assertEqual(code, cli.EXIT_OK, err)
+
+    def test_windows_line_ending_is_stripped(self):
+        _, out, _ = run(["--json"], STRONG + "\r")
+        self.assertEqual(json.loads(out)["length"], len(STRONG))
+
+    def test_getpass_eof_is_a_usage_error(self):
+        err = io.StringIO()
+        with mock.patch("getpass.getpass", side_effect=EOFError):
+            code = cli.main([], stdout=io.StringIO(), stderr=err)
+        self.assertEqual(code, cli.EXIT_ERROR)
+        self.assertIn("no password given", err.getvalue())
+
+    def test_ctrl_c_exits_130(self):
+        err = io.StringIO()
+        with mock.patch("getpass.getpass", side_effect=KeyboardInterrupt):
+            code = cli.main([], stdout=io.StringIO(), stderr=err)
+        self.assertEqual(code, cli.EXIT_INTERRUPTED)
+        self.assertIn("interrupted", err.getvalue())
+
+    def test_ctrl_c_during_breach_check_exits_130(self):
+        def slow_fetcher(prefix):
+            raise KeyboardInterrupt
+
+        code, _, _ = run(["--pwned"], STRONG, fetcher=slow_fetcher)
+        self.assertEqual(code, cli.EXIT_INTERRUPTED)
+
+    def test_broken_pipe_is_handled_quietly(self):
+        class ClosedPipe(io.StringIO):
+            def write(self, text):
+                raise BrokenPipeError
+
+        err = io.StringIO()
+        code = cli.main(["--stdin"], stdin=io.StringIO(STRONG + "\n"), stdout=ClosedPipe(), stderr=err)
+        self.assertEqual(code, cli.EXIT_ERROR)
+        self.assertEqual(err.getvalue(), "")
 
 
 class RedactionTests(unittest.TestCase):
